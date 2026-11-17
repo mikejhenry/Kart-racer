@@ -20,8 +20,12 @@ const DRIFT_MIN_SPEED := 12.0
 const SPIN_DURATION := 1.1
 
 signal item_changed(item: String)
+## Emitted when this kart uses an item, so online races can tell the others.
+signal item_used(kind: String, at: Vector3)
 
 var body_color := Color(0.9, 0.2, 0.2)
+var is_remote := false    ## Driven by network updates from another player
+var is_ghost := false     ## Time trial ghost: see-through, no collisions
 var track          ## The Track node (scripts/track.gd)
 var brain          ## Any object with think(kart, delta)
 var can_drive := false
@@ -56,19 +60,33 @@ var _front_wheels: Array[MeshInstance3D] = []
 var _sparks: Array[CPUParticles3D] = []
 var _hop_t := 1.0
 
+# Remote karts: latest network position, moved forward between updates
+var _net_pos := Vector3.ZERO
+var _net_yaw := 0.0
+var _net_seen := false
+
 
 func _ready() -> void:
 	floor_snap_length = 0.6
-	var shape := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(1.5, 0.9, 2.3)
-	shape.shape = box
-	shape.position.y = 0.45
-	add_child(shape)
+	if is_ghost:
+		collision_layer = 0
+		collision_mask = 0
+	else:
+		var shape := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(1.5, 0.9, 2.3)
+		shape.shape = box
+		shape.position.y = 0.45
+		add_child(shape)
 	_build_visual()
 
 
 func _physics_process(delta: float) -> void:
+	if is_ghost:
+		return
+	if is_remote:
+		_remote_step(delta)
+		return
 	if brain:
 		brain.think(self, delta)
 	if not can_drive or spin_time > 0.0:
@@ -109,26 +127,39 @@ func give_item() -> bool:
 func use_item() -> void:
 	if item == "" or not can_drive or spin_time > 0.0:
 		return
-	match item:
+	var kind := item
+	var at := global_position
+	match kind:
 		"nitro":
 			boost_time = 1.5
+		"oil":
+			var back := global_transform.basis.z
+			back.y = 0.0
+			at = global_position + back.normalized() * 2.8
+	spawn_item_effect(kind, at)
+	item = ""
+	item_changed.emit(item)
+	item_used.emit(kind, at)
+
+
+## Creates the missile or oil slick for an item this kart used. Also called
+## for remote karts when another player uses an item.
+func spawn_item_effect(kind: String, at: Vector3) -> void:
+	match kind:
 		"missile":
 			var missile := Missile.new()
 			missile.setup(self, track)
 			get_parent().add_child(missile)
 		"oil":
 			var slick := OilSlick.new()
-			var back := global_transform.basis.z
-			back.y = 0.0
-			slick.position = global_position + back.normalized() * 2.8
+			slick.position = at
 			get_parent().add_child(slick)
-	item = ""
-	item_changed.emit(item)
 
 
-## Hit by a missile or oil slick.
+## Hit by a missile or oil slick. Remote karts handle their own hits on their
+## owner's device, so nothing happens to them here.
 func spin_out() -> void:
-	if spin_time > 0.0:
+	if spin_time > 0.0 or is_remote or is_ghost:
 		return
 	spin_time = SPIN_DURATION
 	speed *= 0.35
@@ -258,6 +289,64 @@ func respawn() -> void:
 	place_at(current_offset, 0.0)
 
 
+# --- Online -----------------------------------------------------------------
+
+## Compact snapshot of this kart, sent about 10 times a second.
+func network_state() -> Array:
+	var level := 0
+	if drifting:
+		level = 2 if drift_charge >= 2.0 else (1 if drift_charge >= 1.0 else 0)
+	return [
+		snappedf(global_position.x, 0.01), snappedf(global_position.y, 0.01), snappedf(global_position.z, 0.01),
+		snappedf(rotation.y, 0.001), snappedf(speed, 0.01), snappedf(progress, 0.01),
+		snappedf(spin_time, 0.01), drift_dir if drifting else 0.0, level,
+		1 if boost_time > 0.0 else 0, snappedf(steer_in, 0.01),
+	]
+
+
+func apply_remote(d: Array) -> void:
+	if d.size() < 11:
+		return
+	_net_pos = Vector3(d[0], d[1], d[2])
+	_net_yaw = d[3]
+	speed = d[4]
+	progress = d[5]
+	spin_time = d[6]
+	drift_dir = d[7]
+	drifting = drift_dir != 0.0
+	drift_charge = float(d[8])
+	boost_time = 0.2 if d[9] else 0.0
+	steer_in = d[10]
+	if not _net_seen:
+		_net_seen = true
+		global_position = _net_pos
+		rotation.y = _net_yaw
+
+
+func show_name_tag(text: String) -> void:
+	var tag := Label3D.new()
+	tag.text = text
+	tag.font_size = 56
+	tag.pixel_size = 0.01
+	tag.outline_size = 12
+	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	tag.position = Vector3(0, 2.3, 0)
+	add_child(tag)
+
+
+func _remote_step(delta: float) -> void:
+	# Keep moving between updates so remote karts don't stutter.
+	_net_pos += Vector3(-sin(_net_yaw), 0.0, -cos(_net_yaw)) * speed * delta
+	var blend := 1.0 - exp(-12.0 * delta)
+	global_position = global_position.lerp(_net_pos, blend)
+	rotation.y = lerp_angle(rotation.y, _net_yaw, blend)
+	if track:
+		current_offset = track.get_offset(global_position)
+	if spin_time > 0.0:
+		spin_time = maxf(spin_time - delta, 0.0)
+	_update_visual(delta)
+
+
 # --- Looks ------------------------------------------------------------------
 
 func _build_visual() -> void:
@@ -367,6 +456,10 @@ func _material(color: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = color
 	m.roughness = 0.55
+	if is_ghost:
+		m.albedo_color.a = 0.35
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	return m
 
 

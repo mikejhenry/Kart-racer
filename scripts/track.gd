@@ -18,6 +18,7 @@ var road_half_width := 9.0
 var curb_width := 1.5
 var wall_gap := 5.0
 var wall_height := 1.2
+var items_enabled := true
 
 var curve: Curve3D
 var length := 0.0
@@ -196,6 +197,8 @@ func _build_start_gate() -> void:
 
 
 func _build_item_boxes() -> void:
+	if not items_enabled:
+		return
 	for fraction in ITEM_ROWS:
 		var tf := frame_at(length * float(fraction))
 		for lateral in [-6.0, -2.0, 2.0, 6.0]:

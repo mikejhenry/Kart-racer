@@ -4,6 +4,7 @@ extends CanvasLayer
 ## Layout: steer with the left thumb; drift, item and brake with the right.
 ## (The kart accelerates by itself on touch screens.)
 
+var show_item := true   ## Hidden in time trials, which have no items
 var _buttons := {}
 
 
@@ -14,6 +15,7 @@ func _ready() -> void:
 	_add("drift", "DRIFT", 180, false)
 	_add("use_item", "ITEM", 140, false)
 	_add("brake", "BRAKE", 120, false)
+	_buttons["use_item"].visible = show_item
 	get_viewport().size_changed.connect(_layout)
 	_layout()
 
@@ -48,6 +50,11 @@ func _layout() -> void:
 	_buttons["drift"].position = Vector2(screen.x - m - 180, screen.y - m - 180)
 	_buttons["use_item"].position = Vector2(screen.x - m - 160, screen.y - m - 180 - 160)
 	_buttons["brake"].position = Vector2(screen.x - m - 180 - 140, screen.y - m - 120)
+	# With tilt steering, the arrows go away and brake moves to the left thumb.
+	_buttons["steer_left"].visible = not Game.tilt_enabled
+	_buttons["steer_right"].visible = not Game.tilt_enabled
+	if Game.tilt_enabled:
+		_buttons["brake"].position = Vector2(m, screen.y - m - 120)
 
 
 func _circle(d: int, color: Color) -> Texture2D:

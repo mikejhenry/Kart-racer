@@ -3,7 +3,11 @@ extends RefCounted
 
 
 func think(kart, _delta: float) -> void:
-	kart.steer_in = Input.get_axis("steer_left", "steer_right")
+	var steer := Input.get_axis("steer_left", "steer_right")
+	# Buttons, keys and sticks still work with tilt on, and win when used.
+	if Game.tilt_enabled and absf(steer) < 0.1:
+		steer = GameInput.tilt_steer()
+	kart.steer_in = steer
 	var brake := Input.get_action_strength("brake")
 	var gas := Input.get_action_strength("accelerate")
 	if GameInput.auto_accelerate and brake < 0.1:

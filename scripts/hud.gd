@@ -1,7 +1,10 @@
 extends CanvasLayer
-## Race HUD: lap, position, held item, countdown/announcements and results.
+## Race HUD: lap and timer, position, held item, announcements, pause button
+## and the end-of-race / pause panels.
 
 const ITEM_NAMES := {"nitro": "NITRO", "missile": "MISSILE", "oil": "OIL SLICK"}
+
+signal pause_pressed
 
 var _lap_label: Label
 var _place_label: Label
@@ -9,12 +12,15 @@ var _item_label: Label
 var _center_label: Label
 var _warning_label: Label
 var _rotate_label: Label
+var _panel_root: Control
 var _flash_time := 0.0
 
 
 func _ready() -> void:
 	layer = 10
-	_lap_label = _make_label(40, HORIZONTAL_ALIGNMENT_LEFT, VERTICAL_ALIGNMENT_TOP)
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	_lap_label = _make_label(36, HORIZONTAL_ALIGNMENT_LEFT, VERTICAL_ALIGNMENT_TOP)
+	_lap_label.offset_left = 110.0
 	_place_label = _make_label(64, HORIZONTAL_ALIGNMENT_RIGHT, VERTICAL_ALIGNMENT_TOP)
 	_item_label = _make_label(38, HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_TOP)
 	_item_label.label_settings.font_color = Color(1.0, 0.9, 0.3)
@@ -26,6 +32,21 @@ func _ready() -> void:
 	_rotate_label.offset_top = 220.0
 	_rotate_label.text = "Turn your phone sideways for a better view"
 
+	var pause := Button.new()
+	pause.text = "II"
+	pause.focus_mode = Control.FOCUS_NONE
+	pause.custom_minimum_size = Vector2(76, 76)
+	pause.add_theme_font_size_override("font_size", 34)
+	pause.position = Vector2(20, 16)
+	pause.pressed.connect(func(): pause_pressed.emit())
+	add_child(pause)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# Handled here because the HUD keeps running while the game is paused.
+	if event.is_action_pressed("pause"):
+		pause_pressed.emit()
+
 
 func _process(delta: float) -> void:
 	if _flash_time > 0.0:
@@ -36,9 +57,10 @@ func _process(delta: float) -> void:
 	_rotate_label.visible = screen.y > screen.x
 
 
-func set_status(lap: int, total_laps: int, place: int) -> void:
-	_lap_label.text = "LAP %d/%d" % [lap, total_laps]
-	_place_label.text = ordinal(place)
+## place <= 0 hides the position (time trial).
+func set_status(lap: int, total_laps: int, place: int, time: float) -> void:
+	_lap_label.text = "LAP %d/%d\n%s" % [lap, total_laps, format_time(time)]
+	_place_label.text = ordinal(place) if place > 0 else ""
 
 
 func set_item(item: String) -> void:
@@ -54,30 +76,58 @@ func set_wrong_way(on: bool) -> void:
 	_warning_label.text = "WRONG WAY!" if on else ""
 
 
-func show_results(place: int, racers: int, time: float) -> void:
+func has_panel() -> bool:
+	return _panel_root != null
+
+
+func hide_panel() -> void:
+	if _panel_root:
+		_panel_root.queue_free()
+		_panel_root = null
+
+
+## Shows a centred panel. buttons is a list of [label, Callable].
+func show_panel(title: String, lines: Array, buttons: Array) -> void:
+	hide_panel()
 	var center := CenterContainer.new()
 	add_child(center)
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_panel_root = center
+
 	var panel := PanelContainer.new()
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.05, 0.05, 0.1, 0.85)
+	sb.bg_color = Color(0.05, 0.05, 0.1, 0.88)
 	sb.set_corner_radius_all(18)
-	sb.set_content_margin_all(36)
+	sb.set_content_margin_all(30)
 	panel.add_theme_stylebox_override("panel", sb)
+	panel.custom_minimum_size = Vector2(520, 0)
 	center.add_child(panel)
+
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 16)
+	box.add_theme_constant_override("separation", 10)
 	panel.add_child(box)
-	box.add_child(_text("RACE COMPLETE", 48))
-	box.add_child(_text("You finished %s of %d" % [ordinal(place), racers], 36))
-	box.add_child(_text("Time  %s" % format_time(time), 32))
-	var again := Button.new()
-	again.text = "Race again"
-	again.custom_minimum_size = Vector2(320, 80)
-	again.add_theme_font_size_override("font_size", 34)
-	again.pressed.connect(func(): get_tree().reload_current_scene())
-	box.add_child(again)
-	again.grab_focus()
+	box.add_child(_text(title, 46, Color.WHITE))
+	for line in lines:
+		var text := str(line)
+		var color := Color(1.0, 0.85, 0.3) if text.begins_with("★") else Color(0.9, 0.92, 1.0)
+		box.add_child(_text(text.trim_prefix("★"), 26, color))
+
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 16)
+	box.add_child(row)
+	var first: Button = null
+	for b in buttons:
+		var btn := Button.new()
+		btn.text = b[0]
+		btn.custom_minimum_size = Vector2(220, 72)
+		btn.add_theme_font_size_override("font_size", 28)
+		btn.pressed.connect(b[1])
+		row.add_child(btn)
+		if first == null:
+			first = btn
+	if first:
+		first.grab_focus()
 
 
 func _make_label(size: int, h: HorizontalAlignment, v: VerticalAlignment) -> Label:
@@ -99,12 +149,13 @@ func _make_label(size: int, h: HorizontalAlignment, v: VerticalAlignment) -> Lab
 	return l
 
 
-func _text(text: String, size: int) -> Label:
+func _text(text: String, size: int, color: Color) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var ls := LabelSettings.new()
 	ls.font_size = size
+	ls.font_color = color
 	l.label_settings = ls
 	return l
 
