@@ -2,7 +2,7 @@
 
 An arcade kart racer made with **Godot 4.5** (GDScript). It runs on desktop, in the browser, and on phones.
 
-**Play in your browser:** https://mikejhenry.github.io/kart-racer/
+**Play in your browser:** https://mikejhenry.github.io/Kart-racer/
 
 ## What's in it
 
