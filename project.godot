@@ -15,6 +15,7 @@ config/features=PackedStringArray("4.5", "GL Compatibility")
 GameInput="*res://scripts/game_input.gd"
 Net="*res://scripts/net.gd"
 Game="*res://scripts/game.gd"
+Sfx="*res://scripts/sfx.gd"
 
 [display]
 

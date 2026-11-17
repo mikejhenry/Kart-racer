@@ -10,7 +10,15 @@ class_name = "Lobby"
 name = "LEADERBOARD"
 class_name = "Leaderboard"
 
+[[durable_objects.bindings]]
+name = "MATCHMAKER"
+class_name = "Matchmaker"
+
 # SQLite-backed Durable Objects are available on the Workers free plan.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Lobby", "Leaderboard"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Matchmaker"]

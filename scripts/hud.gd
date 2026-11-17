@@ -1,8 +1,14 @@
 extends CanvasLayer
-## Race HUD: lap and timer, position, held item, announcements, pause button
-## and the end-of-race / pause panels.
+## Race HUD: lap and timer, position, held item (with roulette), minimap,
+## announcements, connection status, pause button and the end-of-race /
+## pause panels.
 
-const ITEM_NAMES := {"nitro": "NITRO", "missile": "MISSILE", "oil": "OIL SLICK"}
+const ITEM_NAMES := {
+	"nitro": "NITRO", "missile": "MISSILE", "triple": "MISSILE", "oil": "OIL SLICK",
+	"shield": "SHIELD", "storm": "STORM",
+}
+const UiTheme := preload("res://scripts/ui_theme.gd")
+const ROULETTE_ORDER := ["NITRO", "MISSILE", "OIL SLICK", "SHIELD", "STORM"]
 
 signal pause_pressed
 
@@ -11,9 +17,14 @@ var _place_label: Label
 var _item_label: Label
 var _center_label: Label
 var _warning_label: Label
+var _net_label: Label
 var _rotate_label: Label
 var _panel_root: Control
+var _minimap: Control
 var _flash_time := 0.0
+var _rolling := false
+var _roll_tick := 0.0
+var _roll_index := 0
 
 
 func _ready() -> void:
@@ -28,6 +39,8 @@ func _ready() -> void:
 	_warning_label = _make_label(56, HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_TOP)
 	_warning_label.offset_top = 110.0
 	_warning_label.label_settings.font_color = Color(1.0, 0.35, 0.25)
+	_net_label = _make_label(30, HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_BOTTOM)
+	_net_label.label_settings.font_color = Color(1.0, 0.85, 0.3)
 	_rotate_label = _make_label(34, HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_CENTER)
 	_rotate_label.offset_top = 220.0
 	_rotate_label.text = "Turn your phone sideways for a better view"
@@ -53,8 +66,17 @@ func _process(delta: float) -> void:
 		_flash_time -= delta
 		if _flash_time <= 0.0:
 			_center_label.text = ""
+	if _rolling:
+		_roll_tick -= delta
+		if _roll_tick <= 0.0:
+			_roll_tick = 0.08
+			_roll_index = (_roll_index + 1) % ROULETTE_ORDER.size()
+			_item_label.text = "[ %s ]" % ROULETTE_ORDER[_roll_index]
+			Sfx.play("roulette")
 	var screen := get_viewport().get_visible_rect().size
 	_rotate_label.visible = screen.y > screen.x
+	if _minimap:
+		_minimap.queue_redraw()
 
 
 ## place <= 0 hides the position (time trial).
@@ -63,8 +85,78 @@ func set_status(lap: int, total_laps: int, place: int, time: float) -> void:
 	_place_label.text = ordinal(place) if place > 0 else ""
 
 
-func set_item(item: String) -> void:
-	_item_label.text = "[ %s ]" % ITEM_NAMES[item] if ITEM_NAMES.has(item) else ""
+## item "?" starts the roulette; "" clears the slot.
+func set_item(item: String, count: int = 1) -> void:
+	_rolling = item == "?"
+	if _rolling:
+		return
+	if not ITEM_NAMES.has(item):
+		_item_label.text = ""
+		return
+	var text: String = ITEM_NAMES[item]
+	if item == "triple" or count > 1:
+		text += " x%d" % count
+	_item_label.text = "[ %s ]" % text
+
+
+func set_net_status(text: String) -> void:
+	_net_label.text = text
+
+
+## Adds the minimap: the track outline with a dot per kart.
+func setup_minimap(outline: PackedVector2Array, karts: Array, player) -> void:
+	_minimap = Minimap.new()
+	_minimap.outline = outline
+	_minimap.karts = karts
+	_minimap.player = player
+	_minimap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_minimap)
+	_minimap.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_minimap.offset_left = -200.0
+	_minimap.offset_right = -18.0
+	_minimap.offset_top = 96.0
+	_minimap.offset_bottom = 278.0
+
+
+class Minimap extends Control:
+	var outline := PackedVector2Array()
+	var karts: Array = []
+	var player
+	var _lo := Vector2.ZERO
+	var _scale := 1.0
+	var _pad := Vector2.ZERO
+
+	func _draw() -> void:
+		if outline.is_empty():
+			return
+		var lo := outline[0]
+		var hi := outline[0]
+		for p in outline:
+			lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
+			hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
+		var span := hi - lo
+		_scale = minf((size.x - 16.0) / maxf(span.x, 1.0), (size.y - 16.0) / maxf(span.y, 1.0))
+		_pad = (size - span * _scale) * 0.5
+		_lo = lo
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.3), true)
+		var pts := PackedVector2Array()
+		for p in outline:
+			pts.append(_map(p))
+		pts.append(pts[0])
+		draw_polyline(pts, Color(0, 0, 0, 0.6), 7.0, true)
+		draw_polyline(pts, Color(1, 1, 1, 0.85), 3.5, true)
+		draw_circle(pts[0], 4.0, Color(1, 1, 1))
+		for k in karts:
+			if not is_instance_valid(k) or k == player:
+				continue
+			draw_circle(_map(Vector2(k.global_position.x, k.global_position.z)), 5.0, k.body_color)
+		if is_instance_valid(player):
+			var at := _map(Vector2(player.global_position.x, player.global_position.z))
+			draw_circle(at, 8.0, Color(0, 0, 0))
+			draw_circle(at, 6.0, Color(1, 1, 1))
+
+	func _map(p: Vector2) -> Vector2:
+		return (p - _lo) * _scale + _pad
 
 
 func flash(text: String, duration: float) -> void:
@@ -90,8 +182,9 @@ func hide_panel() -> void:
 func show_panel(title: String, lines: Array, buttons: Array) -> void:
 	hide_panel()
 	var center := CenterContainer.new()
+	center.theme = UiTheme.make()
 	add_child(center)
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_panel_root = center
 
 	var panel := PanelContainer.new()
