@@ -19,6 +19,8 @@ var _music_name := ""
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# The Music and SFX buses are defined in default_bus_layout.tres. They must
+	# exist at startup: in browsers, buses added while running get no sound.
 	_ensure_bus("Music")
 	_ensure_bus("SFX")
 	for n in EFFECTS:

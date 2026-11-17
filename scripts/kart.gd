@@ -113,7 +113,7 @@ func _ready() -> void:
 		set_physics_process(false)
 		return
 	if not is_ghost:
-		_engine = Sfx.make_kart_loop(self, "engine", -6.0 if is_human else -12.0)
+		_engine = Sfx.make_kart_loop(self, "engine", -9.0 if is_human else -16.0)
 		_drift_sound = Sfx.make_kart_loop(self, "drift", -8.0)
 
 
