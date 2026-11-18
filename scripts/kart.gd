@@ -94,6 +94,7 @@ var _ground_vy := 0.0      # vertical speed while driving up or down the road
 # Remote karts: recent snapshots, drawn slightly in the past for smoothness
 var _snaps: Array = []
 var _clock_offset := INF
+var _ghost_mats: Array = []
 
 
 func _ready() -> void:
@@ -726,7 +727,15 @@ func _material(color: Color) -> StandardMaterial3D:
 		m.albedo_color.a = 0.35
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_ghost_mats.append(m)
 	return m
+
+
+## Ghost only: how see-through it is (0 = invisible). The ghost fades out as
+## you drive through it, so overtaking it never looks like a crash.
+func set_ghost_alpha(a: float) -> void:
+	for m in _ghost_mats:
+		m.albedo_color.a = a
 
 
 func _box(size: Vector3, pos: Vector3, mat: Material) -> void:

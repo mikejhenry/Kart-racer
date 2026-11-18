@@ -598,6 +598,11 @@ func _place_ghost(t: float) -> void:
 	var w := f - i
 	ghost.global_position = (a[0] as Vector3).lerp(b[0], w)
 	ghost.rotation.y = lerp_angle(a[1], b[1], w)
+	# Fade the ghost out up close so driving through it reads as passing,
+	# not a hit (it never collides).
+	if player:
+		var d: float = ghost.global_position.distance_to(player.global_position)
+		ghost.set_ghost_alpha(lerpf(0.06, 0.35, clampf((d - 2.0) / 8.0, 0.0, 1.0)))
 
 
 ## Ghost frames are [x, y, z, yaw] ([x, z, yaw] in older saves).
