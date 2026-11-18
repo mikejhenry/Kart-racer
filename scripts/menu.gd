@@ -21,6 +21,8 @@ var _center := Vector3.ZERO
 var _radius := 190.0
 var _box: VBoxContainer
 var _scroll: ScrollContainer
+var _footer: HBoxContainer       ## Buttons pinned below the scrolling area
+var _keep_scroll := -1
 var _title: Label
 var _status: Label
 var _screen := ""
@@ -377,6 +379,8 @@ func _show_multiplayer(message: String = "") -> void:
 
 
 func _show_lobby() -> void:
+	if _screen == "lobby":
+		_keep_scroll = _scroll.scroll_vertical
 	_screen = "lobby"
 	_clear()
 	var info: Dictionary = Net.lobby
@@ -450,13 +454,14 @@ func _show_lobby() -> void:
 		_box.add_child(_autostart_label)
 	elif is_public:
 		_box.add_child(_label("Waiting for another player...", 22, MUTED))
-	if host and str(info.get("phase", "")) != "racing":
-		_button("Start race", func(): Net.send({"t": "start"}))
-	elif not host and not is_public:
+	if not host and not is_public and str(info.get("phase", "")) != "racing":
 		_box.add_child(_label("Waiting for the host to start...", 22, MUTED))
 	_status = _label("", 22, ACCENT)
 	_box.add_child(_status)
-	_button("Leave lobby", func():
+	# Always visible, however long the lobby gets.
+	if host and str(info.get("phase", "")) != "racing":
+		_footer_button("Start race", func(): Net.send({"t": "start"}))
+	_footer_button("Leave lobby", func():
 		Net.leave()
 		_show_multiplayer())
 
@@ -585,9 +590,16 @@ func _build_ui() -> void:
 	sb.set_content_margin_all(24)
 	panel.add_theme_stylebox_override("panel", sb)
 	outer.add_child(panel)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 10)
+	panel.add_child(column)
 	_scroll = ScrollContainer.new()
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	panel.add_child(_scroll)
+	column.add_child(_scroll)
+	_footer = HBoxContainer.new()
+	_footer.add_theme_constant_override("separation", 10)
+	_footer.visible = false
+	column.add_child(_footer)
 	_box = VBoxContainer.new()
 	_box.add_theme_constant_override("separation", 10)
 	_box.custom_minimum_size = Vector2(560, 0)
@@ -602,8 +614,14 @@ func _fit() -> void:
 		return
 	var screen := get_viewport().get_visible_rect().size
 	_title.visible = screen.y > 600
-	var room := screen.y - (150.0 if _title.visible else 60.0)
+	var room := screen.y - (175.0 if _title.visible else 80.0)
+	if _footer.visible:
+		room -= _footer.get_combined_minimum_size().y + 10.0
 	_scroll.custom_minimum_size = Vector2(560, minf(_box.get_combined_minimum_size().y, room))
+	if _keep_scroll >= 0:
+		await get_tree().process_frame
+		_scroll.scroll_vertical = _keep_scroll
+		_keep_scroll = -1
 
 
 
@@ -614,7 +632,17 @@ func _clear() -> void:
 	for c in _box.get_children():
 		_box.remove_child(c)
 		c.queue_free()
+	for c in _footer.get_children():
+		_footer.remove_child(c)
+		c.queue_free()
+	_footer.visible = false
 	_fit()
+
+
+## A button in the bar below the scrolling area, so it's always on screen.
+func _footer_button(text: String, action: Callable) -> Button:
+	_footer.visible = true
+	return _button(text, action, _footer)
 
 
 func _row() -> HBoxContainer:
