@@ -16,6 +16,7 @@ GameInput="*res://scripts/game_input.gd"
 Net="*res://scripts/net.gd"
 Game="*res://scripts/game.gd"
 Sfx="*res://scripts/sfx.gd"
+Voice="*res://scripts/voice.gd"
 
 [display]
 

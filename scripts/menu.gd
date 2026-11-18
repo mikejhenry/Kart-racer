@@ -29,6 +29,9 @@ var _preview_kart
 var _preview_holder: Node3D
 var _autostart_label: Label
 var _autostart_at := 0.0
+var _voice_labels := {}        ## player id -> [Label, name text]
+var _voice_status: Label
+var _voice_ui_joined := false
 
 
 func _ready() -> void:
@@ -55,6 +58,7 @@ func _ready() -> void:
 	Net.lobby_updated.connect(_on_lobby_updated)
 	Net.error.connect(_on_net_error)
 	Net.disconnected.connect(_on_disconnected)
+	Voice.changed.connect(_update_voice)
 	get_viewport().size_changed.connect(_fit)
 	Sfx.play_music("music_menu")
 	if Net.in_lobby():
@@ -379,6 +383,8 @@ func _show_lobby() -> void:
 	var code := str(info.get("code", Net.lobby_code()))
 	var is_public := bool(info.get("public", false))
 	var players: Array = info.get("players", [])
+	_voice_labels = {}
+	_voice_status = null
 	var settings: Dictionary = info.get("settings", {"track": "circuit_1", "bots": false, "difficulty": "normal"})
 	var host := Net.is_host()
 
@@ -396,6 +402,7 @@ func _show_lobby() -> void:
 				_status.text = "Code copied. Send it to your friends.", code_row)
 		copy.size_flags_horizontal = Control.SIZE_SHRINK_END
 		copy.custom_minimum_size = Vector2(140, 76)
+		_add_voice_controls()
 
 	# Race settings: the host can change them, everyone else sees them.
 	var send_settings := func(changes: Dictionary):
@@ -431,6 +438,7 @@ func _show_lobby() -> void:
 		var name_label := _label(tag, 26, Color.WHITE)
 		name_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 		row.add_child(name_label)
+		_voice_labels[str(p.get("id", ""))] = [name_label, tag]
 
 	_autostart_label = null
 	_autostart_at = 0.0
@@ -451,6 +459,58 @@ func _show_lobby() -> void:
 	_button("Leave lobby", func():
 		Net.leave()
 		_show_multiplayer())
+
+
+## Voice chat buttons for private lobbies.
+func _add_voice_controls() -> void:
+	_voice_ui_joined = Voice.joined
+	if not Voice.available:
+		_box.add_child(_label("Voice chat works in the browser version.", 20, MUTED))
+		return
+	var row := _row()
+	if not Voice.joined:
+		_button("Join voice chat", func():
+			Voice.join()
+			_show_lobby(), row)
+	else:
+		_button("Unmute" if Voice.muted else "Mute", func():
+			Voice.set_muted(not Voice.muted)
+			_show_lobby(), row)
+		_button("Leave voice", func():
+			Voice.leave()
+			_show_lobby(), row)
+	_voice_status = _label("", 20, MUTED)
+	_box.add_child(_voice_status)
+	_update_voice()
+
+
+func _update_voice() -> void:
+	if _screen != "lobby":
+		return
+	if Voice.joined != _voice_ui_joined and not bool(Net.lobby.get("public", false)):
+		_show_lobby()   # e.g. the microphone was refused
+		return
+	for id in _voice_labels:
+		var pair: Array = _voice_labels[id]
+		if not is_instance_valid(pair[0]):
+			continue
+		var text: String = pair[1]
+		if Voice.joined and Voice.in_voice(id):
+			text += "  (talking)" if Voice.is_talking(id) else "  (voice)"
+		if pair[0].text != text:
+			pair[0].text = text
+	if _voice_status and is_instance_valid(_voice_status):
+		var text := ""
+		if Voice.error != "":
+			text = Voice.error
+		elif Voice.joined and not Voice.mic_ready:
+			text = "Starting your microphone..."
+		elif Voice.joined:
+			text = "Voice on, %d connected%s. Headphones work best." % [Voice.connected_count(), " (you're muted)" if Voice.muted else ""]
+		else:
+			text = "Talk to the others in this lobby while you race."
+		if _voice_status.text != text:
+			_voice_status.text = text
 
 
 # --- Actions ----------------------------------------------------------------

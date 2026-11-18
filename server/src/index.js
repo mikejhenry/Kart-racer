@@ -6,7 +6,8 @@
 //   POST /lobby                     -> create a private lobby, returns {code}
 //   POST /quickmatch                -> code of an open public lobby (or a new one)
 //   GET  /lobby/CODE                -> does the lobby exist, its phase and size
-//   GET  /lobby/CODE/ws?name=...    -> WebSocket into that lobby
+//   GET  /lobby/CODE/ws?name=...    -> WebSocket into that lobby (also carries
+//                                      voice chat setup for private lobbies)
 //
 // Each lobby is its own Durable Object, so every player in a lobby talks to
 // the same instance. The leaderboard and the matchmaker are single objects
@@ -233,7 +234,8 @@ export class Lobby {
 
   async webSocketMessage(ws, message) {
     const me = ws.deserializeAttachment();
-    if (!me || typeof message !== "string" || message.length > 4096) return;
+    // Voice connection setup (WebRTC offers) can be a few KB.
+    if (!me || typeof message !== "string" || message.length > 16384) return;
     let msg;
     try {
       msg = JSON.parse(message);
@@ -285,6 +287,22 @@ export class Lobby {
         await this.ctx.storage.put("results", results);
         this.broadcast({ t: "f", id, name: racer.name, time, place: results.length });
         await this.maybeEndRace(results);
+        break;
+      }
+
+      case "v": {
+        // Voice chat setup for private lobbies: pass it to one player (or
+        // everyone, for "*"). The audio itself goes directly between players.
+        if (await this.ctx.storage.get("public")) return;
+        if (!msg.d || typeof msg.d !== "object") return;
+        const out = JSON.stringify({ t: "v", from: me.id, d: msg.d });
+        for (const other of this.ctx.getWebSockets()) {
+          const them = other.deserializeAttachment();
+          if (!them || other === ws || (msg.to !== "*" && them.id !== msg.to)) continue;
+          try {
+            other.send(out);
+          } catch {}
+        }
         break;
       }
 

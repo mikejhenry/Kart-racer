@@ -11,6 +11,7 @@ const UiTheme := preload("res://scripts/ui_theme.gd")
 const ROULETTE_ORDER := ["NITRO", "MISSILE", "OIL SLICK", "SHIELD", "STORM"]
 
 signal pause_pressed
+signal mic_pressed
 
 var _lap_label: Label
 var _place_label: Label
@@ -21,6 +22,7 @@ var _net_label: Label
 var _rotate_label: Label
 var _panel_root: Control
 var _minimap: Control
+var _mic: Button
 var _flash_time := 0.0
 var _rolling := false
 var _roll_tick := 0.0
@@ -53,6 +55,15 @@ func _ready() -> void:
 	pause.position = Vector2(20, 16)
 	pause.pressed.connect(func(): pause_pressed.emit())
 	add_child(pause)
+
+	_mic = Button.new()
+	_mic.focus_mode = Control.FOCUS_NONE
+	_mic.custom_minimum_size = Vector2(110, 76)
+	_mic.add_theme_font_size_override("font_size", 24)
+	_mic.position = Vector2(106, 16)
+	_mic.visible = false
+	_mic.pressed.connect(func(): mic_pressed.emit())
+	add_child(_mic)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -97,6 +108,13 @@ func set_item(item: String, count: int = 1) -> void:
 	if item == "triple" or count > 1:
 		text += " x%d" % count
 	_item_label.text = "[ %s ]" % text
+
+
+## Voice chat mute button, shown while in voice.
+func set_mic(shown: bool, muted: bool) -> void:
+	_mic.visible = shown
+	_mic.text = "MUTED" if muted else "MIC ON"
+	_lap_label.offset_left = 230.0 if shown else 110.0
 
 
 func set_net_status(text: String) -> void:

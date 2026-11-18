@@ -11,6 +11,7 @@ An arcade kart racer made with **Godot 4.5** (GDScript), with a small **Cloudfla
 - **Multiplayer:**
   - **Quick match** puts you in an open public lobby, which starts by itself 20 seconds after a second player joins.
   - **Private lobbies** use a 5-letter code. The host picks the track and difficulty, and can **fill empty spots with computer karts** (optional).
+  - **Voice chat** in private lobbies (browser version): tap **Join voice chat** in the lobby. Voice keeps going during races, with a **MIC ON / MUTED** button next to pause. Players connect directly to each other with WebRTC, with echo cancellation and noise suppression. The server only passes along the connection setup, so the audio doesn't count against your Cloudflare usage. Headphones work best.
   - If your connection drops, the game rejoins the same race automatically. If the page reloads, use **Rejoin lobby** on the start screen.
 
 ## Tracks
@@ -98,6 +99,7 @@ Everything runs on Cloudflare's free plan.
 | `scripts/game.gd` | Autoload: modes, settings, records, ghosts, rejoin info |
 | `scripts/net.gd` | Autoload: leaderboard, ghosts, lobbies, quick match, auto-reconnect |
 | `scripts/sfx.gd` | Autoload: sound effects and music |
+| `scripts/voice.gd` | Autoload: voice chat for private lobbies (WebRTC in the browser) |
 | `scripts/game_input.gd` | Autoload: input actions, touch detection, tilt steering |
 | `audio/` | Generated sound effects (.wav) and music (.ogg) |
 | `server/` | Cloudflare Worker: `Lobby`, `Matchmaker` and `Leaderboard` Durable Objects |
@@ -112,4 +114,4 @@ Everything runs on Cloudflare's free plan.
 | `POST /lobby` | Create a private lobby |
 | `POST /quickmatch` | Code of an open public lobby, or a new one |
 | `GET /lobby/CODE` | Whether a lobby exists, its phase and player count |
-| `GET /lobby/CODE/ws?name=…&color=…&style=…` | WebSocket: lobby, settings, start, kart states, items, finishes, drop and rejoin |
+| `GET /lobby/CODE/ws?name=…&color=…&style=…` | WebSocket: lobby, settings, start, kart states, items, finishes, drop and rejoin, voice chat setup |

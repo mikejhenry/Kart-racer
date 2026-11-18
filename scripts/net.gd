@@ -21,6 +21,8 @@ signal error(message: String)
 signal connection_lost          ## Dropped; trying to reconnect
 signal reconnected              ## Back in after connection_lost
 signal disconnected             ## Gave up, or the lobby is gone
+signal left_lobby               ## We left (or were dropped for good)
+signal voice_signal(from: String, data: Dictionary)
 
 var server_url := ""
 var my_id := ""
@@ -133,6 +135,7 @@ func resume(session: Dictionary, player_name: String) -> void:
 
 
 func leave() -> void:
+	left_lobby.emit()
 	_leaving = true
 	if _ws:
 		_ws.close()
@@ -221,6 +224,7 @@ func _give_up() -> void:
 	lobby = {}
 	_token = ""
 	Game.clear_session()
+	left_lobby.emit()
 	disconnected.emit()
 
 
@@ -258,6 +262,9 @@ func _handle(msg: Dictionary) -> void:
 			player_dropped.emit(str(msg.get("id", "")))
 		"back":
 			player_back.emit(str(msg.get("id", "")))
+		"v":
+			if msg.get("d") is Dictionary:
+				voice_signal.emit(str(msg.get("from", "")), msg.d)
 		"error":
 			_refused = true
 			error.emit(str(msg.get("msg", "Server error.")))

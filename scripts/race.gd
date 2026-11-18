@@ -116,6 +116,9 @@ func _ready() -> void:
 		Net.connection_lost.connect(_on_connection_lost)
 		Net.reconnected.connect(_on_reconnected)
 		Net.disconnected.connect(_on_disconnected)
+		hud.mic_pressed.connect(func(): Voice.set_muted(not Voice.muted))
+		Voice.changed.connect(func(): hud.set_mic(Voice.joined, Voice.muted))
+		hud.set_mic(Voice.joined, Voice.muted)
 		if Game.online.get("resume", false):
 			_resume_race()
 
