@@ -429,6 +429,7 @@ func _update_track_position(delta: float) -> void:
 func place_at(offset: float, lateral: float) -> void:
 	var tf: Transform3D = track.frame_at(offset)
 	global_transform = Transform3D(tf.basis, tf.origin + tf.basis.x * lateral + Vector3.UP * 0.2)
+	reset_physics_interpolation()
 	velocity = Vector3.ZERO
 	speed = 0.0
 	drifting = false
@@ -472,6 +473,7 @@ func apply_remote(d: Array, sent_at: float) -> void:
 	if _snaps.is_empty():
 		global_position = pos
 		rotation.y = d[3]
+		reset_physics_interpolation()
 	_snaps.append([sent_at, pos, float(d[3])])
 	while _snaps.size() > 30:
 		_snaps.pop_front()

@@ -29,6 +29,7 @@ var kart_color := 0          ## Index into KART_COLORS
 var music_volume := 0.6
 var sfx_volume := 0.9
 var vibration := true
+var smooth_motion := true   ## Physics interpolation: smooth movement on any screen refresh rate
 var tilt_enabled := false
 var tilt_range := 30.0       ## Degrees of tilt for full steering lock
 var tilt_invert := false
@@ -43,6 +44,7 @@ var _session := {}           ## Last lobby, for rejoining after a reload
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_load_settings()
+	_apply_smooth_motion()
 	Net.race_started.connect(_on_race_started)
 	if tilt_enabled:
 		GameInput.set_tilt_wanted(true)
@@ -157,6 +159,8 @@ func set_value(key: String, value) -> void:
 	set(key, value)
 	if key == "tilt_enabled":
 		GameInput.set_tilt_wanted(bool(value))
+	if key == "smooth_motion":
+		_apply_smooth_motion()
 	if key in ["music_volume", "sfx_volume"]:
 		Sfx.apply_volumes()
 	_save_settings()
@@ -184,6 +188,7 @@ func _load_settings() -> void:
 	music_volume = float(cfg.get_value("settings", "music_volume", 0.6))
 	sfx_volume = float(cfg.get_value("settings", "sfx_volume", 0.9))
 	vibration = bool(cfg.get_value("settings", "vibration", true))
+	smooth_motion = bool(cfg.get_value("settings", "smooth_motion", true))
 	tilt_enabled = bool(cfg.get_value("controls", "tilt_enabled", false))
 	tilt_range = float(cfg.get_value("controls", "tilt_range", 30.0))
 	tilt_invert = bool(cfg.get_value("controls", "tilt_invert", false))
@@ -207,8 +212,16 @@ func _save_settings() -> void:
 	cfg.set_value("settings", "music_volume", music_volume)
 	cfg.set_value("settings", "sfx_volume", sfx_volume)
 	cfg.set_value("settings", "vibration", vibration)
+	cfg.set_value("settings", "smooth_motion", smooth_motion)
 	cfg.set_value("controls", "tilt_enabled", tilt_enabled)
 	cfg.set_value("controls", "tilt_range", tilt_range)
 	cfg.set_value("controls", "tilt_invert", tilt_invert)
 	cfg.set_value("online", "session", _session)
 	cfg.save(SETTINGS_PATH)
+
+
+## Karts move in fixed 60 Hz physics steps. Physics interpolation draws them
+## between steps, so movement stays smooth when the screen refreshes at a
+## different rate (90/120 Hz phones) or the browser's frame timing wobbles.
+func _apply_smooth_motion() -> void:
+	get_tree().physics_interpolation = smooth_motion

@@ -41,6 +41,8 @@ func _ready() -> void:
 	add_child(_label)
 
 	_t = randf() * TAU
+	# Spun every frame in _process, so it needs no physics interpolation.
+	_mesh.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	body_entered.connect(_on_body_entered)
 
 

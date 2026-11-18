@@ -177,6 +177,7 @@ func _show_garage() -> void:
 	cam.fov = 45.0
 	viewport.add_child(cam)
 	_preview_holder = Node3D.new()
+	_preview_holder.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	viewport.add_child(_preview_holder)
 	_box.add_child(container)
 	_rebuild_preview()
@@ -244,6 +245,12 @@ func _show_settings() -> void:
 		Game.set_value("vibration", on)
 		Game.vibrate(80))
 	_box.add_child(buzz)
+
+	var smooth := CheckButton.new()
+	smooth.text = "Smooth motion"
+	smooth.button_pressed = Game.smooth_motion
+	smooth.toggled.connect(func(on): Game.set_value("smooth_motion", on))
+	_box.add_child(smooth)
 
 	var tilt := CheckButton.new()
 	tilt.text = "Tilt to steer"

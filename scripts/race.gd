@@ -188,6 +188,7 @@ func _use_ghost(frames, holder: String) -> void:
 	if holder != "":
 		ghost.show_name_tag(holder)
 	_place_ghost(race_time)
+	ghost.reset_physics_interpolation()
 
 
 func _spawn_online() -> void:
@@ -251,6 +252,7 @@ func _resume_race() -> void:
 		var d: Array = me.d
 		player.global_position = Vector3(d[0], float(d[1]) + 0.3, d[2])
 		player.rotation.y = d[3]
+		player.reset_physics_interpolation()
 		player.progress = d[5]
 		player.prev_offset = track.get_offset(player.global_position)
 		player.current_offset = player.prev_offset
@@ -593,10 +595,14 @@ func _place_ghost(t: float) -> void:
 	if i >= _ghost_frames.size() - 1:
 		ghost.visible = false
 		return
+	# Frames are 0.1 s apart: a smooth curve through them (Catmull-Rom)
+	# avoids the ghost cornering in visible straight segments.
+	var p0 := _ghost_point(_ghost_frames[maxi(i - 1, 0)])
 	var a := _ghost_point(_ghost_frames[i])
 	var b := _ghost_point(_ghost_frames[i + 1])
+	var p3 := _ghost_point(_ghost_frames[mini(i + 2, _ghost_frames.size() - 1)])
 	var w := f - i
-	ghost.global_position = (a[0] as Vector3).lerp(b[0], w)
+	ghost.global_position = (a[0] as Vector3).cubic_interpolate(b[0], p0[0], p3[0], w)
 	ghost.rotation.y = lerp_angle(a[1], b[1], w)
 	# Fade the ghost out up close so driving through it reads as passing,
 	# not a hit (it never collides).

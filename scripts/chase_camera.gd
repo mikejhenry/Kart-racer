@@ -19,6 +19,7 @@ func snap() -> void:
 		return
 	global_position = _desired_position()
 	look_at(_look_point(), Vector3.UP)
+	reset_physics_interpolation()
 
 
 func _physics_process(delta: float) -> void:
