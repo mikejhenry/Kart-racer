@@ -852,12 +852,12 @@ def music_menu():
     dr = np.zeros(total)
     tap = mel.copy()
     for k_ in range(10):
-        tap = lowpass_sr(tap, 3800 - 150 * k_) * (0.8 if k_ == 0 else 0.66)
+        tap = lowpass_sr(tap, 3800 - 150 * k_) * (0.8 if k_ == 0 else 0.62)
         sh = echo * (k_ + 1)
         side = dl if k_ % 2 else dr
         side[sh:] += tap[:-sh]
-    ml += dl * 2.0
-    mr += dr * 2.0
+    ml += dl * 1.0
+    mr += dr * 1.0
     # Reverb: a soft 2 s stereo room behind the echoes. It starts 60 ms
     # late and swells in over 120 ms, so it doesn't smear the note attacks.
     from scipy.signal import fftconvolve
