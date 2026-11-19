@@ -833,24 +833,31 @@ def music_menu():
     mel = np.zeros(total)
     for start_bar in (8, 16):
         for k, ln, n in MEL:
-            d = ln * STEP + 0.3
+            # Plucky: each note fades within about half a second, leaving
+            # gaps for the echoes to be heard in.
+            d = min(ln * STEP + 0.2, 0.75)
             f = nf(n)
-            x = (m_osc(f, d, "tri") + 0.3 * m_osc(f * 2, d)) * m_env(d, 0.006, d, 2.0)
-            x = lowpass_sr(x, 3000)
+            x = (m_osc(f, d, "tri") + 0.35 * m_osc(f * 2, d)) * m_env(d, 0.004, d, 2.6)
+            x = lowpass_sr(x, 3500)
             s_ = int((start_bar * bar_len + k * STEP) * SR)
             mel[s_:s_ + len(x)] += x
-    # Ping-pong dotted-eighth delay: each repeat bounces sides, gets quieter
-    # and darker. The melody ends at bar 20; the 14 repeats are below -45 dB
-    # by bar 23, and anything left over folds smoothly into the loop start.
-    echo = int(3 * STEP * SR)
+    # Ping-pong dotted-quarter delay (about half a second), long enough to
+    # hear each repeat apart from the note. Repeats bounce sides and get
+    # quieter and a little darker. The melody ends at bar 20; by the loop
+    # point (bar 24) the repeats are around -40 dB and fold into the start.
+    echo = int(6 * STEP * SR)
     ml = mel.copy()
     mr = mel.copy()
+    dl = np.zeros(total)
+    dr = np.zeros(total)
     tap = mel.copy()
-    for k_ in range(14):
-        tap = lowpass_sr(tap, 2800 - 120 * k_) * (0.72 if k_ == 0 else 0.68)
+    for k_ in range(10):
+        tap = lowpass_sr(tap, 3800 - 150 * k_) * (0.8 if k_ == 0 else 0.66)
         sh = echo * (k_ + 1)
-        side = ml if k_ % 2 else mr
+        side = dl if k_ % 2 else dr
         side[sh:] += tap[:-sh]
+    ml += dl * 2.0
+    mr += dr * 2.0
     # Reverb: a soft 2 s stereo room behind the echoes. It starts 60 ms
     # late and swells in over 120 ms, so it doesn't smear the note attacks.
     from scipy.signal import fftconvolve
@@ -864,8 +871,8 @@ def music_menu():
         ir = lowpass_sr(ir, 4500) * 0.6 + lowpass_sr(ir, 1500) * 0.4
         ir /= np.sqrt((ir ** 2).sum())
         wet.append(fftconvolve(side, ir)[:total])
-    L += ml * 0.07 + wet[0] * 0.028
-    R += mr * 0.07 + wet[1] * 0.028
+    L += ml * 0.15 + wet[0] * 0.05
+    R += mr * 0.15 + wet[1] * 0.05
 
     # --- a soft air/vinyl bed ---
     air = m_filter(m_noise(total / SR), "bp", 5000, 0.5)
@@ -895,7 +902,7 @@ def main():
         print("wrote", name + ".wav")
     save_ogg_stereo("music_race", music_race())
     print("wrote music_race.ogg")
-    save_ogg_stereo("music_menu", music_menu(), 0.52)
+    save_ogg_stereo("music_menu", music_menu(), 0.6)
     print("wrote music_menu.ogg")
 
 
