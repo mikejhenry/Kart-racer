@@ -708,18 +708,163 @@ def save_ogg_stereo(name, x, peak=0.7):
 
 
 def music_menu():
-    chords = [["C5", "E5", "G5"], ["A4", "C5", "E5"], ["F4", "A4", "C5"], ["G4", "B4", "D5"]] * 2
-    melody = [
-        ("E5", 1), ("G5", 1), ("C6", 2),
-        ("A5", 1), ("C6", 1), ("E6", 2),
-        ("F5", 1), ("A5", 1), ("C6", 1.5), ("A5", 0.5),
-        ("B5", 1), ("D6", 1), ("G5", 2),
-        ("E6", 1.5), ("D6", 0.5), ("C6", 2),
-        ("C6", 1), ("E6", 1), ("A5", 2),
-        ("A5", 1), ("C6", 1), ("F6", 1), ("E6", 1),
-        ("D6", 2), ("G5", 2),
-    ]
-    return render_track(96, 8, chords, melody, "tri", drums=False, bass_pattern="quarters")
+    """Liquid drum and bass for the menus: same tempo and key as the race
+    track so the two belong together, but softer. Electric-piano chords, a
+    warm sub, a gentle rolling beat and an echoing melody. 24 bars: 4 bars
+    build in, 16 bars of groove, 4 bars thin out, then it loops."""
+    bars = 24
+    bar_len = 16 * STEP
+    total = int(bars * bar_len * SR) + SR * 3
+    L = np.zeros(total)
+    R = np.zeros(total)
+    duck = np.ones(total)
+    rng2 = np.random.default_rng(96)
+
+    def put(x, t, gain=1.0, pan=0.0):
+        s_ = int(round(t * SR))
+        e = min(total, s_ + len(x))
+        if e <= s_:
+            return
+        seg = x[: e - s_] * gain
+        L[s_:e] += seg * np.sqrt(0.5 * (1 - pan))
+        R[s_:e] += seg * np.sqrt(0.5 * (1 + pan))
+
+    def stage(bar):
+        if bar < 4:
+            return "intro"
+        if bar < 20:
+            return "groove"
+        return "outro"
+
+    kick = lowpass_sr(d_kick(), 2500)
+    snare = roomify(lowpass_sr(d_snare(200, 0.8), 5000), 0.3)
+    ghost = lowpass_sr(d_snare(220, 0.7), 2500)
+    hat = d_hat()
+    ride = d_ride()
+
+    # --- drums ---
+    for bar in range(bars):
+        st_ = stage(bar)
+        t0 = bar * bar_len
+        for k in range(16):
+            sw = STEP * 0.14 if k % 2 else 0.0
+            g = (0.16 if k % 4 == 2 else 0.07) * rng2.uniform(0.8, 1.1)
+            if st_ == "intro" and bar < 2 and k % 4 != 2:
+                continue
+            put(hat, t0 + k * STEP + sw, g, 0.4)
+        if st_ == "intro":
+            if bar == 3:
+                for k in range(8, 16):
+                    put(ghost, t0 + k * STEP, 0.08 + 0.3 * (k - 8) / 8)
+            continue
+        kicks = [(0, 1.0), (10, 0.85)] if bar % 2 == 0 else [(0, 1.0), (7, 0.5), (10, 0.85)]
+        snrs = [(4, 1.0), (12, 1.0)]
+        ghosts = [(7, 0.25), (9, 0.2), (15, 0.3)] if bar % 2 else [(6, 0.2), (14, 0.25)]
+        if st_ == "outro":
+            kicks = kicks if bar < 22 else [(0, 0.8)]
+            ghosts = ghosts if bar < 22 else []
+        for k, g in kicks:
+            put(kick, t0 + k * STEP, 0.75 * g)
+            s_ = int((t0 + k * STEP) * SR)
+            dl = int(0.2 * SR)
+            e = min(total, s_ + dl)
+            duck[s_:e] = np.minimum(duck[s_:e], 1 - 0.4 * g * np.linspace(1, 0, dl)[: e - s_] ** 1.5)
+        for k, g in snrs:
+            put(snare, t0 + k * STEP, 0.5 * g)
+        for k, g in ghosts:
+            put(ghost, t0 + k * STEP + 0.006, 0.5 * g, rng2.uniform(-0.2, 0.2))
+        for q in range(4):
+            put(ride, t0 + q * 4 * STEP + 2 * STEP, 0.06, -0.45)
+
+    # --- electric piano: a sine with a soft bell partial, syncopated ---
+    def epiano(f, d):
+        t = m_t(d)
+        mod = np.sin(2 * np.pi * f * 2 * t) * 1.2 * np.exp(-t * 6)
+        x = np.sin(2 * np.pi * f * t + mod) + 0.25 * np.sin(2 * np.pi * f * 3 * t) * np.exp(-t * 9)
+        trem = 1 + 0.12 * np.sin(2 * np.pi * 4.5 * t)
+        return x * trem * m_env(d, 0.004, d, 1.6)
+
+    for bar in range(bars):
+        _, tones = chord_at(bar)
+        hits = [(0, 6), (6, 4), (10, 6)] if bar % 2 == 0 else [(0, 7), (11, 5)]
+        g_bar = 1.0
+        for k, ln in hits:
+            d = ln * STEP + 0.35
+            for i, f in enumerate(tones):
+                put(epiano(f / 2, d), bar * bar_len + k * STEP + i * 0.008, 0.06 * g_bar, -0.3 + 0.2 * i)
+
+    # --- pad ---
+    for bar in range(0, bars, 2):
+        _, tones = chord_at(bar)
+        d = 2 * bar_len + 0.5
+        for f in tones:
+            for det, pan in ((-0.1, -0.8), (0.1, 0.8)):
+                x = m_osc(f * 2 ** (det / 12), d, "saw", rng2.random()) * m_env(d, 0.6, 0.8, 1.0, hold=d - 1.4)
+                x = lowpass_sr(lowpass_sr(x, 900), 1600)
+                put(x, bar * bar_len, 0.03, pan)
+
+    # --- warm sub and a soft, slowly filtered bass ---
+    sub = np.zeros(total)
+    mid = np.zeros(total)
+    for bar in range(bars):
+        root, _ = chord_at(bar)
+        notes = [(0, 12, 0), (12, 4, 7)] if bar % 2 == 0 else [(0, 8, 0), (8, 4, 12), (12, 4, 10)]
+        if stage(bar) == "outro" and bar >= 22:
+            notes = [(0, 16, 0)]
+        for k, ln, semi in notes:
+            f = root * 2 ** (semi / 12)
+            d = ln * STEP * 0.97
+            e = m_env(d, 0.01, 0.05, 1.0, hold=d - 0.07)
+            s_ = int((bar * bar_len + k * STEP) * SR)
+            x = m_osc(f, d) * e
+            ee = min(total, s_ + len(x))
+            sub[s_:ee] += x[: ee - s_]
+            y = (m_osc(f * 2 ** (0.1 / 12), d, "saw") + m_osc(f * 2 ** (-0.1 / 12), d, "saw")) * e
+            mid[s_:ee] += y[: ee - s_]
+    tt = np.arange(total) / SR
+    cutoff = 260 + 260 * (0.5 - 0.5 * np.cos(2 * np.pi * tt / (4 * bar_len)))
+    mid = m_filter(m_filter(mid, "lp", cutoff, 1.4), "hp", 100)
+    L += (sub * 0.32 + mid * 0.07) * duck
+    R += (sub * 0.32 + mid * 0.07) * duck
+
+    # --- melody: a slow, echoing pluck over the groove ---
+    MEL = [(0, 4, "C6"), (6, 2, "D#6"), (8, 8, "F6"), (16, 4, "D#6"), (22, 2, "C6"), (24, 8, "G#5"),
+           (32, 4, "C6"), (38, 2, "C#6"), (40, 8, "C6"), (48, 4, "A#5"), (54, 2, "G5"), (56, 8, "G5")]
+    mel = np.zeros(total)
+    for start_bar in (8, 16):
+        for k, ln, n in MEL:
+            d = ln * STEP + 0.3
+            f = nf(n)
+            x = (m_osc(f, d, "tri") + 0.3 * m_osc(f * 2, d)) * m_env(d, 0.006, d, 2.0)
+            x = lowpass_sr(x, 3000)
+            s_ = int((start_bar * bar_len + k * STEP) * SR)
+            mel[s_:s_ + len(x)] += x
+    echo = int(3 * STEP * SR)
+    ml = mel.copy()
+    mr = mel.copy()
+    for k_, (gl, gr) in enumerate(((0.0, 0.45), (0.32, 0.0), (0.0, 0.2), (0.1, 0.0))):
+        sh = echo * (k_ + 1)
+        if gl:
+            ml[sh:] += mel[:-sh] * gl
+        if gr:
+            mr[sh:] += mel[:-sh] * gr
+    L += ml * 0.07
+    R += mr * 0.07
+
+    # --- a soft air/vinyl bed ---
+    air = m_filter(m_noise(total / SR), "bp", 5000, 0.5)
+    crackle = np.zeros(total)
+    idx = rng2.integers(0, total, int(total / SR * 6))
+    crackle[idx] = rng2.uniform(-1, 1, len(idx))
+    L += air * 0.004 + lowpass_sr(crackle, 6000) * 0.05
+    R += air[::-1] * 0.004 + lowpass_sr(np.roll(crackle, 777), 6000) * 0.05
+
+    n = int(bars * bar_len * SR)
+    L[: total - n] += L[n:]
+    R[: total - n] += R[n:]
+    mix = np.stack([m_filter(L[:n], "hp", 28), m_filter(R[:n], "hp", 28)], axis=1)
+    peak = np.max(np.abs(mix))
+    return np.tanh(mix / peak * 1.15) / np.tanh(1.15)
 
 
 def main():
@@ -734,7 +879,7 @@ def main():
         print("wrote", name + ".wav")
     save_ogg_stereo("music_race", music_race())
     print("wrote music_race.ogg")
-    save_ogg("music_menu", music_menu())
+    save_ogg_stereo("music_menu", music_menu(), 0.52)
     print("wrote music_menu.ogg")
 
 
