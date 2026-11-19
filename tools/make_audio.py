@@ -840,32 +840,32 @@ def music_menu():
             s_ = int((start_bar * bar_len + k * STEP) * SR)
             mel[s_:s_ + len(x)] += x
     # Ping-pong dotted-eighth delay: each repeat bounces sides, gets quieter
-    # and darker. The melody ends at bar 20, so the repeats and the reverb
-    # have died away (well under -60 dB) before the loop point at bar 24.
+    # and darker. The melody ends at bar 20; the 14 repeats are below -45 dB
+    # by bar 23, and anything left over folds smoothly into the loop start.
     echo = int(3 * STEP * SR)
     ml = mel.copy()
     mr = mel.copy()
     tap = mel.copy()
-    for k_ in range(10):
-        tap = lowpass_sr(tap, 2600 - 150 * k_) * 0.58
+    for k_ in range(14):
+        tap = lowpass_sr(tap, 2800 - 120 * k_) * (0.72 if k_ == 0 else 0.68)
         sh = echo * (k_ + 1)
         side = ml if k_ % 2 else mr
         side[sh:] += tap[:-sh]
-    # Reverb: a 3 s stereo hall made of decaying, darkening noise.
+    # Reverb: a soft 2 s stereo room behind the echoes. It starts 60 ms
+    # late and swells in over 120 ms, so it doesn't smear the note attacks.
     from scipy.signal import fftconvolve
-    rlen = int(3.0 * SR)
+    rlen = int(2.2 * SR)
     t = np.arange(rlen) / SR
-    decay = np.exp(-t * 6.9 / 2.6)               # about -60 dB at 2.6 s
-    pre = int(0.025 * SR)
+    decay = np.exp(-t * 6.9 / 2.0)               # about -60 dB at 2 s
+    decay *= np.clip((t - 0.06) / 0.12, 0.0, 1.0) ** 2
     wet = []
     for side in (ml, mr):
         ir = rng2.standard_normal(rlen) * decay
         ir = lowpass_sr(ir, 4500) * 0.6 + lowpass_sr(ir, 1500) * 0.4
-        ir[:pre] = 0.0
         ir /= np.sqrt((ir ** 2).sum())
         wet.append(fftconvolve(side, ir)[:total])
-    L += ml * 0.07 + wet[0] * 0.07
-    R += mr * 0.07 + wet[1] * 0.07
+    L += ml * 0.07 + wet[0] * 0.028
+    R += mr * 0.07 + wet[1] * 0.028
 
     # --- a soft air/vinyl bed ---
     air = m_filter(m_noise(total / SR), "bp", 5000, 0.5)
