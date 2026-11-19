@@ -42,6 +42,7 @@ var finished_count := 0
 var _lap_start := 0.0
 var _last_count_shown := -1
 var _best_lap := 1
+var _tower_timer := 0.0
 var _paused := false
 
 # Time trial
@@ -97,9 +98,11 @@ func _ready() -> void:
 	hud.pause_pressed.connect(_toggle_pause)
 	hud.setup_minimap(track.outline(), karts, player)
 	player.item_changed.connect(hud.set_item)
+	hud.set_items_enabled(mode != "time_trial")
 	if GameInput.touch_ui:
 		var touch := TouchControls.new()
 		touch.show_item = mode != "time_trial"
+		touch.kart = player
 		add_child(touch)
 	Sfx.play_music("music_race")
 	hud.flash(str(def.name), 0.5)
@@ -149,6 +152,7 @@ func _spawn_grand_prix() -> void:
 			colors.append(Game.KART_COLORS[i])
 	for i in 5:
 		var k = _add_kart(colors[i], i, Kart.STYLES[(i + 1) % Kart.STYLES.size()])
+		k.racer_name = "CPU %d" % (i + 1)
 		k.skill = AI_SKILL[difficulty][i]
 		k.speed_factor = k.skill
 		k.brain = AiBrain.new(track, Game.ai_level(difficulty))
@@ -199,6 +203,7 @@ func _spawn_online() -> void:
 		var is_me := id == Net.my_id
 		var k = _add_kart(Color.html(str(p.get("color", "e62633"))), i, str(p.get("style", "classic")), is_me)
 		k.net_id = id
+		k.racer_name = str(p.get("name", "Racer"))
 		kart_by_id[id] = k
 		if bool(p.get("bot", false)):
 			_bots.append(k)
@@ -638,6 +643,26 @@ func _update_places() -> void:
 		order[i].place = i + 1
 
 
+## The standings tower: everyone in race order with the gap to the leader,
+## estimated from the distance between them.
+func _update_tower() -> void:
+	var order := karts.duplicate()
+	order.sort_custom(_ahead_of)
+	var rows := []
+	var lead = order[0]
+	for k in order:
+		var gap := ""
+		if k.finish_order > 0:
+			gap = "FIN"
+		elif k == lead:
+			gap = "LEADER"
+		else:
+			gap = "+%.1f" % ((lead.progress - k.progress) / 25.0)
+		var who: String = "YOU" if k == player else (k.racer_name if k.racer_name != "" else "CPU")
+		rows.append({"name": who.to_upper(), "color": k.body_color, "me": k == player, "gap": gap})
+	hud.set_standings(rows)
+
+
 func _ahead_of(a, b) -> bool:
 	var a_done: bool = a.finish_order > 0
 	var b_done: bool = b.finish_order > 0
@@ -651,11 +676,16 @@ func _ahead_of(a, b) -> bool:
 func _update_hud() -> void:
 	var lap := clampi(int(floor(player.progress / track.length)) + 1, 1, Game.TOTAL_LAPS)
 	var place: int = 0 if mode == "time_trial" else player.place
-	hud.set_status(lap, Game.TOTAL_LAPS, place, race_time)
+	hud.set_status(lap, Game.TOTAL_LAPS, place, race_time, karts.size())
+	_tower_timer -= get_process_delta_time()
+	if _tower_timer <= 0.0 and mode != "time_trial":
+		_tower_timer = 0.25
+		_update_tower()
 	if state == "racing" and lap > _best_lap:
 		_best_lap = lap
 		lap_times.append(race_time - _lap_start)
 		_lap_start = race_time
+		hud.set_best_lap(lap_times.min())
 		var text := "FINAL LAP!" if lap == Game.TOTAL_LAPS else "LAP %d" % lap
 		if mode == "time_trial":
 			text += "\n" + Hud.format_time(lap_times[-1])

@@ -39,6 +39,7 @@ signal item_used(kind: String, at: Vector3, target_id: String)
 var body_color := Color(0.9, 0.2, 0.2)
 var style := "classic"
 var net_id := ""          ## Player or bot id in online races
+var racer_name := ""      ## Shown in the standings tower
 var is_remote := false    ## Driven by network updates from another device
 var is_ghost := false     ## Time trial ghost: see-through, no collisions
 var is_human := false     ## The local player's own kart (sounds, vibration)
