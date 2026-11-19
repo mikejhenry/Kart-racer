@@ -16,6 +16,11 @@ const WARN := Color(1.0, 0.6, 0.5)
 const GHOST_NAMES := {"mine": "Your best run", "record": "World record", "off": "No ghost"}
 
 var _camera: Camera3D
+var _bg: Node3D                ## Background track, sky and lights
+var _bg_track_id := ""
+var _track_focus := false       ## Panel moves left and the track is framed on the right
+var _focus := 0.0               ## Eases towards _track_focus
+var _ui_root: Control
 var _angle := 0.0
 var _center := Vector3.ZERO
 var _radius := 190.0
@@ -37,23 +42,11 @@ var _voice_ui_joined := false
 
 
 func _ready() -> void:
-	var def := Tracks.get_track(Game.track_id)
-	World.add_environment(self, Tracks.THEMES[def.theme])
-	var track = Track.new()
-	track.track_id = def.id
-	add_child(track)
-	track.build()
-	var lo := Vector2(INF, INF)
-	var hi := Vector2(-INF, -INF)
-	for p in def.points:
-		lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.z))
-		hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.z))
-	_center = Vector3((lo.x + hi.x) * 0.5, 0.0, (lo.y + hi.y) * 0.5)
-	_radius = maxf(hi.x - lo.x, hi.y - lo.y) * 0.75 + 40.0
 	_camera = Camera3D.new()
 	_camera.far = 1500.0
 	add_child(_camera)
 	_camera.make_current()
+	_show_track(Game.track_id)
 
 	_build_ui()
 	Net.joined.connect(func(_id): _show_lobby())
@@ -69,10 +62,56 @@ func _ready() -> void:
 		_show_main()
 
 
+## Shows a track (with its sky and lighting) orbiting behind the menu.
+## Called whenever a screen is about a particular track.
+func _show_track(id: String) -> void:
+	var def := Tracks.get_track(id)
+	if def.id == _bg_track_id:
+		return
+	_bg_track_id = def.id
+	if _bg and is_instance_valid(_bg):
+		remove_child(_bg)   # out of the scene now, so only one sky is active
+		_bg.queue_free()
+	_bg = Node3D.new()
+	add_child(_bg)
+	World.add_environment(_bg, Tracks.THEMES[def.theme])
+	# The menu camera sits much further back than in a race: thin the fog
+	# so the whole track stays clear.
+	for n in _bg.get_children():
+		if n is WorldEnvironment:
+			n.environment.fog_density = 0.0007
+	var track = Track.new()
+	track.track_id = def.id
+	_bg.add_child(track)
+	track.build()
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for p in def.points:
+		lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.z))
+		hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.z))
+	_center = Vector3((lo.x + hi.x) * 0.5, 0.0, (lo.y + hi.y) * 0.5)
+	_radius = maxf(hi.x - lo.x, hi.y - lo.y) * 0.75 + 40.0
+
+
 func _process(delta: float) -> void:
 	_angle += delta * 0.08
-	_camera.position = _center + Vector3(cos(_angle) * _radius, _radius * 0.45, sin(_angle) * _radius)
+	# On track screens on a wide screen, the panel slides left and the camera
+	# rises and shifts so the whole track sits in the free space on the right.
+	var screen := get_viewport().get_visible_rect().size
+	var aspect := screen.x / maxf(screen.y, 1.0)
+	var panel_w: float = _ui_root.get_child(0).get_combined_minimum_size().x if _ui_root else INF
+	var want := 1.0 if _track_focus and screen.x * 0.5 >= panel_w + 24.0 else 0.0
+	_focus = move_toward(_focus, want, delta * 2.5)
+	var e := _focus * _focus * (3.0 - 2.0 * _focus)
+	var height := lerpf(0.45, 0.85, e)
+	var dist := lerpf(1.0, 0.85, e)
+	_camera.position = _center + Vector3(cos(_angle) * _radius * dist, _radius * height, sin(_angle) * _radius * dist)
 	_camera.look_at(_center, Vector3.UP)
+	var reach := _camera.position.distance_to(_center) * tan(deg_to_rad(_camera.fov * 0.5)) * aspect
+	_camera.h_offset = -0.5 * reach * e
+	if _ui_root:
+		_ui_root.anchor_right = lerpf(1.0, 0.5, e)
+		_ui_root.offset_right = 0.0
 	if _screen == "settings":
 		_update_tilt_meter()
 	if _preview_holder and is_instance_valid(_preview_holder):
@@ -87,6 +126,7 @@ func _process(delta: float) -> void:
 func _show_main() -> void:
 	_screen = "main"
 	_clear()
+	_show_track(Game.track_id)
 	_box.add_child(_label("Your name", 22, MUTED))
 	var name_edit := LineEdit.new()
 	name_edit.text = Game.player_name
@@ -120,6 +160,8 @@ func _show_main() -> void:
 func _show_setup(mode: String) -> void:
 	_screen = "setup"
 	_clear()
+	_show_track(Game.track_id)
+	_track_focus = true
 	var gp := mode == "grand_prix"
 	_box.add_child(_label("Grand Prix" if gp else "Time Trial", 40, Color.WHITE))
 	_box.add_child(_label("Track", 22, MUTED))
@@ -131,6 +173,7 @@ func _show_setup(mode: String) -> void:
 		best.text = "Your best here: %s" % Hud.format_time(t) if t > 0.0 else "No time set here yet"
 	_box.add_child(_picker(Tracks.ids(), Tracks.name_of, Game.track_id, func(v):
 		Game.set_value("track_id", v)
+		_show_track(v)
 		refresh.call()))
 	_box.add_child(blurb)
 	if gp:
@@ -321,6 +364,8 @@ func _update_tilt_meter() -> void:
 func _show_leaderboard(track: String) -> void:
 	_screen = "leaderboard"
 	_clear()
+	_show_track(track)
+	_track_focus = true
 	_box.add_child(_label("Time Trial records", 40, Color.WHITE))
 	_box.add_child(_picker(Tracks.ids(), Tracks.name_of, track, func(v): _show_leaderboard(v)))
 	var list := VBoxContainer.new()
@@ -398,6 +443,8 @@ func _show_lobby() -> void:
 	_voice_status = null
 	var settings: Dictionary = info.get("settings", {"track": "circuit_1", "bots": false, "difficulty": "normal"})
 	var host := Net.is_host()
+	_show_track(str(settings.get("track", "circuit_1")))
+	_track_focus = true
 
 	if is_public:
 		_box.add_child(_label("Public match", 40, Color.WHITE))
@@ -581,6 +628,7 @@ func _build_ui() -> void:
 	center.theme = UiTheme.make()
 	layer.add_child(center)
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_ui_root = center
 
 	var outer := VBoxContainer.new()
 	outer.add_theme_constant_override("separation", 10)
@@ -643,6 +691,7 @@ func _clear() -> void:
 		_footer.remove_child(c)
 		c.queue_free()
 	_footer.visible = false
+	_track_focus = false
 	_fit()
 
 
