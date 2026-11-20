@@ -43,6 +43,7 @@ var _autostart_at := 0.0
 var _voice_icons := {}         ## player id -> VoiceIcon
 var _voice_status: Label
 var _voice_ui_joined := false
+var _name_edit: LineEdit        ## Garage name box, saved when leaving the screen
 
 
 func _ready() -> void:
@@ -365,7 +366,18 @@ func _show_garage() -> void:
 	name_edit.max_length = 16
 	name_edit.placeholder_text = "Racer"
 	name_edit.custom_minimum_size = Vector2(0, 72)
-	name_edit.text_changed.connect(Game.set_player_name)
+	# Saved as you type, when you press Enter or tap away, and when you
+	# leave the screen (on phones the browser's keyboard may not report
+	# every keystroke before you tap Back). An empty box keeps the old name.
+	var commit := func(text: String):
+		if text.strip_edges() != "":
+			Game.set_player_name(text)
+	name_edit.text_changed.connect(commit)
+	name_edit.text_submitted.connect(func(text):
+		commit.call(text)
+		name_edit.release_focus())
+	name_edit.focus_exited.connect(func(): commit.call(name_edit.text))
+	_name_edit = name_edit
 	_box.add_child(name_edit)
 
 	# Rotating 3D preview of the kart
@@ -1067,6 +1079,10 @@ func _fit() -> void:
 
 
 func _clear() -> void:
+	if _name_edit and is_instance_valid(_name_edit):
+		if _name_edit.text.strip_edges() != "":
+			Game.set_player_name(_name_edit.text)
+		_name_edit = null
 	_preview_holder = null
 	_preview_kart = null
 	_status = null
